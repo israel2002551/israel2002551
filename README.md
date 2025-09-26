@@ -661,3 +661,4 @@ document.getElementById('turnsContainer').innerText = 'No mission';
 </script>
 </body>
 </html>
+
