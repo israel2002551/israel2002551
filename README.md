@@ -1,589 +1,663 @@
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>AI Security Dashboard — Firebase Frontend</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ESP32 Mission Planner — Advanced</title>
 
-  <!-- Tailwind (CDN) -->
-  <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
-  <!-- Leaflet CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<!-- Simple styles -->
+<style>
+  html,body { height:100%; margin:0; padding:0; }
+  body { font-family: Arial, sans-serif; display:flex; flex-direction:column; }
 
-  <style>
-    :root{
-      --bg: #0f172a;
-      --card: #0b1220;
-      --muted: #94a3b8;
-      --accent: #2563eb;
-    }
-    html,body { height:100%; background:var(--bg); color:#e6eef8; font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; }
-    .card { background:var(--card); border:1px solid rgba(255,255,255,0.04); border-radius:12px; padding:14px; }
-    .muted { color:var(--muted); font-size:0.95rem; }
-    #streamWrap { position:relative; background:#000; display:flex; align-items:center; justify-content:center; min-height:220px; }
-    #videoImg { max-width:100%; max-height:calc(60vh); display:block; object-fit:contain; }
-    #overlayCanvas { position:absolute; left:0; top:0; pointer-events:none; }
-    .log-entry { border-left:4px solid; padding:8px; margin-bottom:8px; background: rgba(255,255,255,0.02); border-radius:6px; }
-    .btn { padding:8px 12px; border-radius:8px; cursor:pointer; border:none; color:white; font-weight:600; }
-    .btn.primary { background:#2563eb; }
-    .btn.warn { background:#ef4444; }
-    .btn.ghost { background:#10b981; }
-    /* ensure map container has fixed height so Leaflet renders fine */
-    #miniMap { height:220px; border-radius:10px; }
-    pre { color:#e6eef8; white-space:pre-wrap; word-wrap:break-word; }
-    /* responsive tweaks */
-    @media (max-width: 1024px) {
-      #videoImg, #overlayCanvas { max-height: 45vh; }
-    }
-  </style>
+  /* Login area */
+  #authWrap { display:flex; align-items:center; justify-content:center; height:100vh; background: linear-gradient(#f7fbff,#eef6ff); }
+  .authCard { background:white; padding:20px; width:360px; border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,0.08); }
+  .authCard input { width:100%; padding:8px; margin:8px 0; border-radius:4px; border:1px solid #ddd; }
+
+  /* App layout */
+  #app { display:none; height:100vh; flex-direction:column; }
+  #map { flex:1; min-height:360px; }
+  #controls { padding:12px; background:#fafafa; border-top:1px solid #eee; display:flex; flex-direction:column; gap:10px; }
+
+  .topRow { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+  .leftCol { flex:1; display:flex; flex-direction:column; gap:8px; }
+  .rightCol { width:320px; display:flex; flex-direction:column; gap:6px; }
+
+  #robot-status-display { padding:8px; background:#e9f7ff; border-left:4px solid #2196F3; font-size:0.95em; border-radius:4px; }
+  .status-text { margin-right:8px; display:inline-block; }
+
+  .buttons { display:flex; gap:8px; flex-wrap:wrap; }
+  button { padding:8px 12px; border-radius:6px; border:none; cursor:pointer; background:#1976d2; color:white; }
+  button.ghost { background:#4caf50; }
+  button.warn { background:#e53935; }
+
+  textarea { width:100%; height:110px; padding:8px; border-radius:6px; border:1px solid #ddd; font-family:monospace; resize:vertical; }
+
+  .progress-wrap { width:100%; background:#eee; height:14px; border-radius:8px; overflow:hidden; }
+  .progress-bar { height:100%; width:0%; background:linear-gradient(90deg,#4caf50,#1e88e5); transition: width 400ms ease; }
+
+  .small { font-size:0.9em; color:#444; }
+  .muted { color:#666; font-size:0.85em; }
+
+  .playback { display:flex; gap:6px; align-items:center; }
+  .playback input[type="range"] { width:160px; }
+
+  .arrowMarker { transform-origin:center; }
+  .robotIcon div { transform-origin:center; }
+
+  @media (max-width:900px){
+    .topRow{flex-direction:column}
+    .rightCol{width:100%}
+  }
+</style>
 </head>
-<body class="p-6">
-  <div class="max-w-7xl mx-auto">
+<body>
 
-    <!-- Header -->
-    <header class="flex items-center justify-between mb-6">
-      <div class="flex items-center gap-4">
-        <div class="p-3 bg-blue-600 rounded-lg">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
-        </div>
-        <div>
-          <h1 class="text-xl font-bold">AI Security Dashboard (Firebase)</h1>
-          <div class="muted">Client-only UI — requires a secure backend (Cloud Function) to perform Gemini/Telegram actions.</div>
-        </div>
+<!-- Authentication -->
+<div id="authWrap">
+  <div class="authCard" id="authCard">
+    <h3 style="margin:0 0 8px 0">ESP32 Mission Planner — Sign in / Sign up</h3>
+
+    <div id="authForms">
+      <input id="emailField" type="email" placeholder="Email" autocomplete="username">
+      <input id="passwordField" type="password" placeholder="Password" autocomplete="current-password">
+      <div style="display:flex; gap:8px; margin-top:6px;">
+        <button id="signInBtn">Sign In</button>
+        <button id="signUpBtn" class="ghost">Sign Up</button>
       </div>
+      <p class="muted" style="margin-top:8px">Uses Firebase Authentication (email/password). For production, secure your DB rules.</p>
+    </div>
 
-      <div class="flex items-center gap-3">
-        <div id="authArea" class="flex items-center gap-3">
-          <input id="email" class="px-3 py-2 rounded bg-gray-800 border border-gray-700" placeholder="email" />
-          <input id="password" type="password" class="px-3 py-2 rounded bg-gray-800 border border-gray-700" placeholder="password" />
-          <button id="signInBtn" class="btn primary">Sign In</button>
-          <button id="signUpBtn" class="btn ghost">Sign Up</button>
-        </div>
-        <div id="userArea" style="display:none" class="flex items-center gap-3">
-          <div class="muted" id="userEmail">---</div>
-          <button id="signOutBtn" class="btn warn">Sign out</button>
-        </div>
-      </div>
-    </header>
-
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-      <!-- Main stream + controls -->
-      <section class="lg:col-span-2 space-y-6">
-        <div class="card">
-          <div class="flex justify-between items-start mb-3">
-            <div>
-              <h2 class="text-lg font-semibold">Live Security Feed</h2>
-              <div class="muted">Frame & detection overlays (source: Firebase RTDB)</div>
-            </div>
-            <div class="flex gap-2">
-              <button id="snapBtn" class="btn ghost">Capture Image</button>
-              <button id="recordBtn" class="btn primary" data-state="off">Start Recording</button>
-              <button id="analyzeBtn" class="btn" style="background:#06b6d4">Request AI Analysis</button>
-            </div>
-          </div>
-
-          <div id="streamWrap" class="w-full rounded overflow-hidden relative">
-            <!-- We'll use an <img> for the baseframe and a canvas overlay for detections -->
-            <img id="videoImg" alt="live frame" src="" />
-            <canvas id="overlayCanvas"></canvas>
-          </div>
-
-          <div class="flex items-center justify-between mt-3">
-            <div class="muted">Status: <span id="cameraStatus">loading</span></div>
-            <div class="muted">Last update: <span id="lastUpdate">never</span></div>
-          </div>
-        </div>
-
-        <!-- Controls & actions -->
-        <div class="card grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <h3 class="font-semibold">Controls</h3>
-            <div class="mt-2 flex flex-col gap-2">
-              <div class="flex gap-2">
-                <button id="leftBtn" class="btn primary">← Left</button>
-                <button id="rightBtn" class="btn primary">Right →</button>
-              </div>
-              <div class="flex gap-2">
-                <button id="flashOnBtn" class="btn">Flash On</button>
-                <button id="flashOffBtn" class="btn">Flash Off</button>
-              </div>
-              <div class="flex gap-2">
-                <button id="startRecordDevice" class="btn">Start Recording (Device)</button>
-                <button id="stopRecordDevice" class="btn">Stop Recording (Device)</button>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <h3 class="font-semibold">Analysis</h3>
-            <div class="mt-2">
-              <div class="muted">Manual AI analysis triggers an entry in the database. A backend Cloud Function should process it and write results to <code>/analysis_results/latest</code>.</div>
-              <div class="mt-2 flex gap-2">
-                <button id="manualAnalyzeBtn" class="btn" style="background:#8b5cf6">Trigger Manual Analysis</button>
-                <button id="fetchAnalysisBtn" class="btn" style="background:#22c55e">Get Latest Result</button>
-              </div>
-              <pre id="analysisResult" class="mt-2 bg-gray-900 p-2 rounded text-sm" style="max-height:120px; overflow:auto;"></pre>
-            </div>
-          </div>
-
-          <div>
-            <h3 class="font-semibold">Client Recording</h3>
-            <div class="muted">Record video in the browser (frames captured from image stream).</div>
-            <div class="mt-2 flex flex-col gap-2">
-              <button id="startClientRecord" class="btn primary">Start Client Record</button>
-              <button id="stopClientRecord" class="btn warn">Stop & Download</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Chat area -->
-        <div class="card">
-          <h3 class="font-semibold">AI Chat Assistant</h3>
-          <div class="mt-2 muted">Messages are posted to <code>/chat_requests</code>. A backend must process and write responses to <code>/chat_responses</code>.</div>
-          <div class="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-            <input id="chatInput" placeholder="Ask something about current frame..." class="px-3 py-2 rounded bg-gray-800 border"/>
-            <button id="sendChatBtn" class="btn primary">Send</button>
-            <button id="clearChatBtn" class="btn ghost">Clear Chat</button>
-          </div>
-          <div id="chatBox" class="mt-3 bg-gray-900 p-3 rounded" style="max-height:220px; overflow:auto"></div>
-        </div>
-      </section>
-
-      <!-- Right column: logs, GPS quick, vehicle control -->
-      <aside class="space-y-6">
-        <div class="card">
-          <h3 class="font-semibold">System Activity Log</h3>
-          <div id="logContainer" class="mt-3" style="max-height:360px; overflow:auto"></div>
-        </div>
-
-        <div class="card">
-          <h3 class="font-semibold">GPS Quick View</h3>
-          <div id="miniMap" class="rounded mt-2"></div>
-          <div class="mt-2 muted">Latest latitude: <span id="gpsLat">N/A</span>, lon: <span id="gpsLon">N/A</span></div>
-          <div class="mt-3 flex gap-2">
-            <button id="openGpsBtn" class="btn ghost">Open GPS Page</button>
-            <button id="resetRouteBtn" class="btn warn">Reset Route</button>
-          </div>
-        </div>
-
-        <div class="card">
-          <h3 class="font-semibold">Vehicle Control</h3>
-          <div class="muted">Sends commands to <code>/vehicle_commands</code>. A secure backend/edge controller should read and act on these.</div>
-          <div class="mt-3 flex gap-2">
-            <button id="shutdownBtn" class="btn warn">SHUTDOWN ENGINE</button>
-            <button id="enableBtn" class="btn primary">ENABLE ENGINE</button>
-          </div>
-        </div>
-      </aside>
+    <div id="authStatus" style="display:none; margin-top:8px;">
+      <div class="small">Signed in as <span id="authEmail"></span></div>
+      <div style="margin-top:8px;"><button id="signOutBtn" class="warn">Sign out</button></div>
     </div>
   </div>
+</div>
 
-  <!-- Firebase (v8 compatibility used to match original code) -->
-  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+<!-- App -->
+<div id="app">
+  <div id="map"></div>
 
-  <!-- Leaflet -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <div id="controls">
+    <div class="topRow">
+      <div class="leftCol">
+        <div style="display:flex; justify-content:space-between; gap:8px; align-items:center;">
+          <div>
+            <h4 style="margin:0">Robot Status</h4>
+            <div id="robot-status-display">No status yet.</div>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <label class="small">Follow</label>
+            <input type="checkbox" id="followToggle" checked>
+            <label class="small">Breadcrumb</label>
+            <input type="checkbox" id="breadcrumbToggle" checked>
+            <button id="logoutBtn" class="warn" style="margin-left:8px">Logout</button>
+          </div>
+        </div>
 
-  <script>
-  /*****************************************************************
-   * CONFIG - replace with your Firebase project config
-   * Do NOT store any secrets (Gemini/Telegram/etc.) in client code.
-   *****************************************************************/
-  const firebaseConfig = {
-    apiKey: "REPLACE_WITH_YOUR_APIKEY",
-    authDomain: "REPLACE_WITH_YOUR_AUTHDOMAIN",
-    databaseURL: "REPLACE_WITH_YOUR_DATABASEURL",
-    projectId: "REPLACE_WITH_YOUR_PROJECTID",
-    storageBucket: "REPLACE_WITH_YOUR_STORAGEBUCKET",
-    messagingSenderId: "REPLACE_WITH_MESSAGING_SENDER_ID",
-    appId: "REPLACE_WITH_APPID"
-  };
+        <div style="margin-top:6px;">
+          <div class="buttons">
+            <button id="clearBtn">Clear Map Markers</button>
+            <button id="uploadMissionBtn" class="ghost">Upload Mission</button>
+            <button id="fetchMissionBtn" class="ghost">Fetch Mission</button>
+            <button id="refreshConfigBtn">Refresh Config</button>
+          </div>
+        </div>
 
-  firebase.initializeApp(firebaseConfig);
-  const auth = firebase.auth();
-  const db = firebase.database();
+        <div style="margin-top:8px;">
+          <h4 style="margin:6px 0">Mission JSON (editable)</h4>
+          <textarea id="missionArea" placeholder='{"waypoints":[{"lat":6.52,"lon":3.37}]}'></textarea>
+        </div>
+      </div>
 
-  /* DOM refs */
-  const videoImg = document.getElementById('videoImg');
-  const overlayCanvas = document.getElementById('overlayCanvas');
-  const cameraStatusEl = document.getElementById('cameraStatus');
-  const lastUpdateEl = document.getElementById('lastUpdate');
-  const logContainer = document.getElementById('logContainer');
-  const analysisResultEl = document.getElementById('analysisResult');
-  const chatBox = document.getElementById('chatBox');
-  const gpsLatEl = document.getElementById('gpsLat'), gpsLonEl = document.getElementById('gpsLon');
+      <div class="rightCol">
+        <div>
+          <div class="small">Mission Progress</div>
+          <div class="progress-wrap" style="margin-top:6px;">
+            <div id="progressBar" class="progress-bar"></div>
+          </div>
+          <div id="progressText" class="small" style="margin-top:6px">0%</div>
+        </div>
 
-  const signInBtn = document.getElementById('signInBtn');
-  const signUpBtn = document.getElementById('signUpBtn');
-  const signOutBtn = document.getElementById('signOutBtn');
-  const emailInput = document.getElementById('email');
-  const passwordInput = document.getElementById('password');
-  const authArea = document.getElementById('authArea');
-  const userArea = document.getElementById('userArea');
-  const userEmailEl = document.getElementById('userEmail');
+        <div style="margin-top:12px;">
+          <div class="small">ETA</div>
+          <div id="etaText" class="small">N/A</div>
+        </div>
 
-  /* Listener registry to detach on sign-out */
-  let listeners = [];
+        <div style="margin-top:12px;">
+          <div class="small">Playback</div>
+          <div class="playback">
+            <button id="playBtn">Play</button>
+            <button id="pauseBtn">Pause</button>
+            <button id="stepBackBtn">◀</button>
+            <button id="stepFwdBtn">▶</button>
+            <label class="small" style="margin-left:6px">Speed</label>
+            <input id="playbackSpeed" type="range" min="0.25" max="4" step="0.25" value="1">
+          </div>
+        </div>
 
-  function attachListener(path, event = 'value', cb){
-    const ref = db.ref(path);
-    ref.on(event, cb);
-    listeners.push({ref, event});
-    return ref;
+        <div style="margin-top:10px;">
+          <div class="small">Turn-by-turn (arrows)</div>
+          <div id="turnsContainer" class="muted" style="margin-top:6px">No mission</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Libraries -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+<script>
+/* ---------------- CONFIG - replace firebaseConfig with your project settings ---------------- */
+const firebaseConfig = {
+  apiKey: "AIzaSyADd3G_8WJFmiJmB2ewOYhs9IpuJRtTQ7A",
+  authDomain: "navigator-59e90.firebaseapp.com",
+  databaseURL: "https://navigator-59e90-default-rtdb.firebaseio.com",
+  projectId: "navigator-59e90",
+  storageBucket: "navigator-59e90.appspot.com",
+  messagingSenderId: "677281499595",
+  appId: "1:677281499595:web:f0bafebed198b2eece4e4e"
+};
+firebase.initializeApp(firebaseConfig);
+
+/* ---------------- GLOBAL STATE ---------------- */
+let map, missionRouteLayer, missionMarkersLayer, userMarkersLayer, breadcrumbLine, robotMarker = null, arrowLayer;
+let robotRef = null;
+let followRobot = true;
+let showBreadcrumb = true;
+let playbackInterval = null;
+let playbackIndex = 0;
+let playbackSpeed = 1.0;
+let currentMission = null; // {waypoints: [{lat,lon}], mission_id}
+let lastStatus = null;
+
+/* ---------------- AUTH UI ---------------- */
+const authWrap = document.getElementById('authWrap');
+const authCard = document.getElementById('authCard');
+const authForms = document.getElementById('authForms');
+const authStatus = document.getElementById('authStatus');
+
+const signInBtn = document.getElementById('signInBtn');
+const signUpBtn = document.getElementById('signUpBtn');
+const signOutBtn = document.getElementById('signOutBtn');
+const emailField = document.getElementById('emailField');
+const passwordField = document.getElementById('passwordField');
+const authEmail = document.getElementById('authEmail');
+
+signInBtn.addEventListener('click', async () => {
+  const email = emailField.value.trim();
+  const pwd = passwordField.value;
+  if (!email || !pwd) return alert('Email & password required.');
+  try {
+    await firebase.auth().signInWithEmailAndPassword(email, pwd);
+    // onAuthStateChanged will handle UI updates
+  } catch(err) {
+    alert('Sign in error: ' + err.message);
   }
-  function detachDatabaseListeners(){
-    listeners.forEach(o => {
-      try { o.ref.off(o.event); } catch(e){}
-    });
-    listeners = [];
-  }
+});
 
-  /* ========== Auth UI ========== */
-  signInBtn.onclick = async () => {
-    const email = emailInput.value.trim();
-    const pwd = passwordInput.value;
-    if (!email || !pwd) return alert('Email/password required.');
-    try { await auth.signInWithEmailAndPassword(email, pwd); }
-    catch(err){ alert('Sign in: ' + err.message); }
-  };
-  signUpBtn.onclick = async () => {
-    const email = emailInput.value.trim();
-    const pwd = passwordInput.value;
-    if (!email || !pwd) return alert('Email/password required.');
+signUpBtn.addEventListener('click', async () => {
+  const email = emailField.value.trim();
+  const pwd = passwordField.value;
+  if (!email || !pwd) return alert('Email & password required.');
+  try {
+    await firebase.auth().createUserWithEmailAndPassword(email, pwd);
+    alert('Account created. You are now signed in.');
+  } catch(err) {
+    alert('Sign up error: ' + err.message);
+  }
+});
+
+signOutBtn.addEventListener('click', async () => {
+  try {
+    await firebase.auth().signOut();
+  } catch(err) {
+    console.error('Sign out error', err);
+  }
+});
+
+/* On auth state changes, show/hide app */
+firebase.auth().onAuthStateChanged(user => {
+  if (user) {
+    // signed in
+    authForms.style.display = 'none';
+    authStatus.style.display = 'block';
+    authEmail.innerText = user.email || user.uid;
+    // show app
+    authWrap.style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    startApp(); // initialize map & firebase listeners
+  } else {
+    // signed out
+    authForms.style.display = 'block';
+    authStatus.style.display = 'none';
+    authWrap.style.display = 'flex';
+    document.getElementById('app').style.display = 'none';
+    stopApp();
+  }
+});
+
+/* ---------------- START / STOP APP ---------------- */
+function startApp(){
+  // firebase db path for robot (customize if needed)
+  robotRef = firebase.database().ref('robot1');
+
+  if (!map) initMap();
+  attachFirebaseListeners();
+  setupUI();
+}
+
+function stopApp(){
+  // detach db listeners
+  if (robotRef) {
     try {
-      await auth.createUserWithEmailAndPassword(email, pwd);
-      alert('Account created. You are signed in.');
-    } catch(err){ alert('Sign up: ' + err.message); }
-  };
-  signOutBtn.onclick = async () => { await auth.signOut(); };
-
-  auth.onAuthStateChanged(user => {
-    if (user) {
-      authArea.style.display = 'none';
-      userArea.style.display = 'flex';
-      userEmailEl.textContent = user.email || user.uid;
-      attachDatabaseListeners(); // start realtime listeners when signed in
-      // Leaflet map may be in a hidden container previously -> invalidate size
-      setTimeout(() => { safeInvalidateMap(); }, 300);
-    } else {
-      authArea.style.display = 'flex';
-      userArea.style.display = 'none';
-      userEmailEl.textContent = '---';
-      detachDatabaseListeners();
-      cameraStatusEl.textContent = 'signed-out';
-    }
-  });
-
-  /* ========== Map (Leaflet) ========== */
-  const miniMap = L.map('miniMap', { zoomControl:false, attributionControl:false }).setView([6.5244,3.3792], 6);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(miniMap);
-  let gpsMarker = L.marker([6.5244,3.3792]).addTo(miniMap);
-  let gpsPolyline = L.polyline([], { color:'#8b5cf6' }).addTo(miniMap);
-
-  /* Debounced invalidateSize helper to avoid repeated layout thrashing */
-  let invalidateTimeout = null;
-  function safeInvalidateMap(delay = 200){
-    if (invalidateTimeout) clearTimeout(invalidateTimeout);
-    invalidateTimeout = setTimeout(() => {
-      try { miniMap.invalidateSize(); } catch(e){ console.warn('invalidateSize failed', e); }
-      invalidateTimeout = null;
-    }, delay);
-  }
-
-  /* ========== Core realtime listeners ========== */
-  function attachDatabaseListeners(){
-    // latest frame (base64 JPEG string)
-    attachListener('latest_frame_base64', 'value', (snap) => {
-      const val = snap.val();
-      if (!val) { cameraStatusEl.textContent = 'no frame'; videoImg.src = ''; clearOverlay(); return; }
-      videoImg.src = 'data:image/jpeg;base64,' + val;
-      cameraStatusEl.textContent = 'online';
-      lastUpdateEl.textContent = new Date().toLocaleString();
-      // overlay sizing will be handled when image finishes loading
-    });
-
-    // detection results (array/object)
-    attachListener('detection_results', 'value', (snap) => {
-      drawDetections(snap.val() || []);
-    });
-
-    // system log (array/object)
-    attachListener('system_log', 'value', (snap) => {
-      renderLogs(snap.val() || []);
-    });
-
-    // analysis results (latest)
-    attachListener('analysis_results/latest', 'value', (snap) => {
-      const val = snap.val();
-      if (!val) return;
-      analysisResultEl.textContent = JSON.stringify(val, null, 2);
-      addLogToUI('gemini_response', 'New AI analysis available.');
-    });
-
-    // chat responses
-    attachListener('chat_responses', 'value', (snap) => {
-      const val = snap.val(); if (!val) return;
-      chatBox.innerHTML = '';
-      Object.values(val).forEach(item => appendChatBubble(item.text || item.response || JSON.stringify(item)));
-    });
-
-    // gps route
-    attachListener('gps_route', 'value', (snap) => {
-      renderGpsMini(snap.val() || []);
-    });
-
-    // vehicle_state (optional)
-    attachListener('vehicle_state', 'value', (snap) => {
-      const val = snap.val();
-      if (val && val.status) addLogToUI('info', 'Vehicle: ' + val.status);
-    });
-  }
-
-  /* ========== UI helpers ========== */
-  function renderLogs(logs){
-    logContainer.innerHTML = '';
-    if (!logs) return;
-    const list = Array.isArray(logs) ? logs.slice(0,50) : Object.values(logs).slice(0,50);
-    list.reverse().forEach(l => addLogToUI(l.type || 'info', l.message || JSON.stringify(l)));
-  }
-
-  function addLogToUI(type, message){
-    const wrap = document.createElement('div');
-    wrap.className = 'log-entry';
-    wrap.style.borderLeftColor = type.includes('error') ? '#ef4444' : (type.includes('gemini') ? '#8b5cf6' : '#34d399');
-    wrap.innerHTML = `<div class="text-sm font-semibold">${(type||'INFO').toUpperCase()} <span class="muted text-xs">${new Date().toLocaleTimeString()}</span></div>
-                      <div class="muted mt-1">${message}</div>`;
-    logContainer.prepend(wrap);
-    while (logContainer.childElementCount > 200) logContainer.removeChild(logContainer.lastChild);
-  }
-
-  function appendChatBubble(text){
-    const d = document.createElement('div');
-    d.className = 'p-2 rounded mb-2';
-    d.style.background = 'rgba(255,255,255,0.02)';
-    d.textContent = text;
-    chatBox.appendChild(d);
-    chatBox.scrollTop = chatBox.scrollHeight;
-  }
-
-  /* ========== Detection overlay drawing ========== */
-  function clearOverlay(){
-    try {
-      const ctx = overlayCanvas.getContext('2d');
-      ctx && ctx.clearRect(0,0,overlayCanvas.width, overlayCanvas.height);
+      robotRef.child('status').off();
+      robotRef.child('mission').off();
+      robotRef.child('config').off();
     } catch(e){}
   }
+  // clear map layers
+  if (missionMarkersLayer) missionMarkersLayer.clearLayers();
+  if (userMarkersLayer) userMarkersLayer.clearLayers();
+  if (missionRouteLayer) missionRouteLayer.setLatLngs([]);
+  if (breadcrumbLine) breadcrumbLine.setLatLngs([]);
+  if (arrowLayer) arrowLayer.clearLayers();
+  if (robotMarker) { map.removeLayer(robotMarker); robotMarker = null; }
+  // stop playback
+  stopPlayback();
+}
 
-  function syncOverlaySize(){
-    const img = videoImg;
-    const canvas = overlayCanvas;
-    if (!img || !canvas) return;
-    const rect = img.getBoundingClientRect();
-    canvas.width = Math.max(1, Math.floor(rect.width));
-    canvas.height = Math.max(1, Math.floor(rect.height));
-    canvas.style.left = img.offsetLeft + 'px';
-    canvas.style.top = img.offsetTop + 'px';
-    canvas.style.width = rect.width + 'px';
-    canvas.style.height = rect.height + 'px';
-  }
+/* ---------------- MAP INIT ---------------- */
+function initMap(){
+  map = L.map('map').setView([6.5244,3.3792],15);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom:19, attribution:'© OpenStreetMap contributors'
+  }).addTo(map);
 
-  // Use requestAnimationFrame to avoid layout thrash when image loads
-  function scheduleSyncOverlay(){
-    if (typeof window._overlayRaf !== 'undefined') cancelAnimationFrame(window._overlayRaf);
-    window._overlayRaf = requestAnimationFrame(() => { syncOverlaySize(); drawDetections(lastDetections || []); });
-  }
+  missionRouteLayer = L.polyline([], { color:'green', weight:3, dashArray:'6,6' }).addTo(map);
+  missionMarkersLayer = L.layerGroup().addTo(map);
+  userMarkersLayer = L.layerGroup().addTo(map);
+  breadcrumbLine = L.polyline([], { color:'blue', weight:3 }).addTo(map);
+  arrowLayer = L.layerGroup().addTo(map);
 
-  let lastDetections = [];
-  function drawDetections(detections){
+  // click to add user waypoint (draggable)
+  map.on('click', (e) => {
+    const m = L.marker(e.latlng, { draggable:true }).addTo(userMarkersLayer);
+    m.on('dragend', updateMissionJsonFromUserMarkers);
+    m.on('click', () => {
+      if (confirm('Remove this waypoint?')) { userMarkersLayer.removeLayer(m); updateMissionJsonFromUserMarkers(); }
+    });
+    updateMissionJsonFromUserMarkers();
+  });
+
+  // ensure map paints fully once visible
+  setTimeout(()=> map.invalidateSize(), 80);
+}
+
+/* ---------------- UI SETUP ---------------- */
+function setupUI(){
+  document.getElementById('logoutBtn').addEventListener('click', async () => {
+    try { await firebase.auth().signOut(); } catch(e){ console.error(e); }
+  });
+
+  document.getElementById('clearBtn').addEventListener('click', () => {
+    missionMarkersLayer.clearLayers();
+    userMarkersLayer.clearLayers();
+    missionRouteLayer.setLatLngs([]);
+    breadcrumbLine.setLatLngs([]);
+    arrowLayer.clearLayers();
+    document.getElementById('missionArea').value = JSON.stringify({ waypoints: [] }, null, 2);
+    setProgress(0);
+    document.getElementById('turnsContainer').innerText = 'No mission';
+    document.getElementById('etaText').innerText = 'N/A';
+  });
+
+  document.getElementById('uploadMissionBtn').addEventListener('click', () => {
+    const txt = document.getElementById('missionArea').value;
     try {
-      lastDetections = Array.isArray(detections) ? detections : (detections ? Object.values(detections) : []);
-      syncOverlaySize();
-      const canvas = overlayCanvas;
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0,0,canvas.width,canvas.height);
-      if (!lastDetections || !lastDetections.length) return;
-      const img = videoImg;
-      const naturalW = img.naturalWidth || canvas.width;
-      const naturalH = img.naturalHeight || canvas.height;
-      const scaleX = canvas.width / naturalW;
-      const scaleY = canvas.height / naturalH;
-      lastDetections.forEach(d => {
-        if (!d.bbox || d.bbox.length < 4) return;
-        const [x1,y1,x2,y2] = d.bbox.map(Number);
-        const w = Math.max(1, (x2 - x1) * scaleX);
-        const h = Math.max(1, (y2 - y1) * scaleY);
-        const x = x1 * scaleX;
-        const y = y1 * scaleY;
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = '#ff4d4f';
-        ctx.strokeRect(x,y,w,h);
-        ctx.fillStyle = '#ff4d4f';
-        ctx.font = '14px sans-serif';
-        const label = (d.class || 'obj');
-        ctx.fillText(label, x + 6, Math.max(14, y + 14));
-      });
-    } catch(e){ console.error('drawDetections', e); }
+      const mission = JSON.parse(txt);
+      // basic validation
+      if (!mission.waypoints || !Array.isArray(mission.waypoints)) return alert('Mission JSON must contain waypoints array.');
+      robotRef.child('mission').set(mission).then(()=> alert('Mission uploaded.'));
+    } catch(e) { alert('Invalid JSON: ' + e.message); }
+  });
+
+  document.getElementById('fetchMissionBtn').addEventListener('click', () => {
+    robotRef.child('mission').once('value', snap => {
+      if (!snap.exists()) alert('No mission found.');
+      else {
+        const mission = snap.val();
+        renderMission(mission);
+        alert('Mission fetched and rendered.');
+      }
+    });
+  });
+
+  document.getElementById('refreshConfigBtn').addEventListener('click', () => {
+    robotRef.child('config').once('value').then(snap => {
+      const cfg = snap.val();
+      if (cfg) alert(`Config: BaseSpeed=${cfg.baseSpeed||'N/A'}, SafeDist=${cfg.safeDistance||'N/A'}`);
+      else alert('No config');
+    }).catch(e => console.error(e));
+  });
+
+  document.getElementById('followToggle').addEventListener('change', (e) => followRobot = e.target.checked);
+  document.getElementById('breadcrumbToggle').addEventListener('change', (e) => {
+    showBreadcrumb = e.target.checked;
+    breadcrumbLine.setStyle({ opacity: showBreadcrumb ? 1 : 0 });
+  });
+
+  // Playback controls
+  document.getElementById('playBtn').addEventListener('click', startPlayback);
+  document.getElementById('pauseBtn').addEventListener('click', stopPlayback);
+  document.getElementById('stepFwdBtn').addEventListener('click', () => stepPlayback(1));
+  document.getElementById('stepBackBtn').addEventListener('click', () => stepPlayback(-1));
+  document.getElementById('playbackSpeed').addEventListener('input', (e) => {
+    playbackSpeed = parseFloat(e.target.value);
+    if (playbackInterval) {
+      // restart interval with new speed
+      stopPlayback(); startPlayback();
+    }
+  });
+}
+
+/* ---------------- UTIL: mission JSON from user markers ---------------- */
+function updateMissionJsonFromUserMarkers(){
+  const wps = [];
+  userMarkersLayer.eachLayer(l => {
+    const p = l.getLatLng(); wps.push({ lat:+p.lat.toFixed(7), lon:+p.lng.toFixed(7) });
+  });
+  const mission = { mission_id:'UI-'+Date.now(), waypoints:wps };
+  document.getElementById('missionArea').value = JSON.stringify(mission, null, 2);
+}
+
+/* ---------------- FIREBASE LISTENERS ---------------- */
+function attachFirebaseListeners(){
+  if (!robotRef) return;
+
+  // mission listener
+  robotRef.child('mission').on('value', snap => {
+    const mission = snap.val();
+    currentMission = mission || null;
+    renderMission(mission);
+  });
+
+  // status listener (robot gps)
+  robotRef.child('status').on('value', snap => {
+    const status = snap.val();
+    lastStatus = status || null;
+    updateStatusUI(status);
+    if (status && typeof status.lat === 'number' && typeof status.lng === 'number') {
+      handleRobotMovement(status);
+    }
+  });
+}
+
+/* ---------------- RENDER MISSION ---------------- */
+function renderMission(mission) {
+  missionMarkersLayer.clearLayers();
+  arrowLayer.clearLayers();
+  missionRouteLayer.setLatLngs([]);
+  breadcrumbLine.setLatLngs([]);
+  setProgress(0);
+  document.getElementById('turnsContainer').innerText = 'No mission';
+  document.getElementById('etaText').innerText = 'N/A';
+
+  if (!mission || !Array.isArray(mission.waypoints) || mission.waypoints.length === 0) {
+    document.getElementById('missionArea').value = JSON.stringify({ waypoints: [] }, null, 2);
+    return;
   }
 
-  /* Keep overlay updated when image loads / window resizes */
-  videoImg.addEventListener('load', () => {
-    scheduleSyncOverlay();
-  });
-  window.addEventListener('resize', () => {
-    scheduleSyncOverlay();
-    safeInvalidateMap(250);
-  });
+  const latlngs = mission.waypoints.map(wp => [wp.lat, wp.lon]);
+  missionRouteLayer.setLatLngs(latlngs);
+  try { map.fitBounds(missionRouteLayer.getBounds(), { padding:[40,40] }); } catch(e){}
 
-  /* ========== Commands & actions (push to DB) ========== */
-  async function sendCommand(cmd){
-    const user = auth.currentUser ? (auth.currentUser.email || auth.currentUser.uid) : 'web';
-    const entry = { cmd, user, ts: Date.now() };
-    try {
-      await db.ref('command_queue').push(entry);
-      addLogToUI('command', `Queued: ${cmd}`);
-    } catch(e){ addLogToUI('error','Failed to queue command: '+(e.message||e)); }
+  // add markers and turns (simple arrows at each segment)
+  const turns = [];
+  for (let i=0;i<latlngs.length;i++){
+    const ll = latlngs[i];
+    L.marker(ll, { draggable:false }).addTo(missionMarkersLayer).bindPopup('Waypoint '+(i+1));
+    if (i < latlngs.length-1) {
+      // compute bearing for arrow
+      const a = latlngs[i], b = latlngs[i+1];
+      const bearing = turf.bearing(turf.point([a[1], a[0]]), turf.point([b[1], b[0]])); // turf uses [lon,lat]
+      // arrow as rotated divIcon
+      const arrow = L.marker([(a[0]+b[0])/2, (a[1]+b[1])/2], {
+        icon: L.divIcon({
+          className: 'arrowMarker',
+          html: `<div style="transform: rotate(${bearing}deg); font-size:18px; opacity:0.9;">➤</div>`,
+          iconSize: [24,24], iconAnchor:[12,12]
+        }),
+        interactive:false
+      }).addTo(arrowLayer);
+      turns.push(`Segment ${i+1} → ${i+2}: bearing ${bearing.toFixed(1)}°`);
+    }
   }
 
-  // wired control buttons
-  document.getElementById('leftBtn').addEventListener('click', () => sendCommand('left'));
-  document.getElementById('rightBtn').addEventListener('click', () => sendCommand('right'));
-  document.getElementById('flashOnBtn').addEventListener('click', () => sendCommand('flash_on'));
-  document.getElementById('flashOffBtn').addEventListener('click', () => sendCommand('flash_off'));
-  document.getElementById('startRecordDevice').addEventListener('click', () => sendCommand('start_record'));
-  document.getElementById('stopRecordDevice').addEventListener('click', () => sendCommand('stop_record'));
+  document.getElementById('turnsContainer').innerText = turns.join('\n') || 'No turns';
+  document.getElementById('missionArea').value = JSON.stringify(mission, null, 2);
 
-  // Analyze buttons
-  document.getElementById('analyzeBtn').addEventListener('click', async () => {
-    try {
-      const newRef = db.ref('analysis_requests').push();
-      await newRef.set({ requested_by: auth.currentUser ? auth.currentUser.uid : 'web', ts: Date.now(), frame_ts: Date.now() });
-      addLogToUI('info', 'Analysis requested: ' + newRef.key);
-    } catch(e){ addLogToUI('error','Analysis request failed: '+e.message); }
-  });
-  document.getElementById('manualAnalyzeBtn').addEventListener('click', () => document.getElementById('analyzeBtn').click());
-  document.getElementById('fetchAnalysisBtn').addEventListener('click', async () => {
-    const snap = await db.ref('analysis_results/latest').once('value');
-    const val = snap.val();
-    if (val) { analysisResultEl.textContent = JSON.stringify(val, null, 2); addLogToUI('info','Fetched latest analysis'); }
-    else addLogToUI('info','No analysis result present.');
-  });
+  // reset playback index
+  playbackIndex = 0;
+}
 
-  /* ========== Snapshot (download) ========== */
-  document.getElementById('snapBtn').addEventListener('click', async () => {
-    try {
-      const snap = await db.ref('latest_frame_base64').once('value');
-      const b = snap.val();
-      if (!b) return alert('No frame available to capture.');
-      const a = document.createElement('a');
-      a.href = 'data:image/jpeg;base64,' + b;
-      a.download = 'snapshot_' + new Date().toISOString() + '.jpg';
-      document.body.appendChild(a); a.click(); a.remove();
-      addLogToUI('info','Snapshot downloaded (client).');
-    } catch(e){ addLogToUI('error','Snapshot failed: '+e.message); }
-  });
+/* ---------------- UPDATE STATUS UI ---------------- */
+function updateStatusUI(status) {
+  const display = document.getElementById('robot-status-display');
+  if (!status) { display.innerText = 'Robot status not available.'; return; }
+  const lat = typeof status.lat === 'number' ? status.lat.toFixed(6) : 'N/A';
+  const lng = typeof status.lng === 'number' ? status.lng.toFixed(6) : 'N/A';
+  const heading = typeof status.heading === 'number' ? status.heading.toFixed(1)+'°' : 'N/A';
+  const battery = typeof status.battery === 'number' ? status.battery+'%' : 'N/A';
+  const speed = typeof status.speed === 'number' ? status.speed.toFixed(2)+' m/s' : 'N/A';
+  const ultrasonic = typeof status.ultrasonic === 'number' ? status.ultrasonic.toFixed(1)+' cm' : 'N/A';
+  const ts = status.ts ? new Date(status.ts*1000).toLocaleTimeString() : new Date().toLocaleTimeString();
 
-  /* ========== Client recording (frames drawn into a canvas) ========== */
-  let clientRecorder = null, clientCanvas = null, clientStreamInterval = null, recordChunks = [];
-  document.getElementById('startClientRecord').addEventListener('click', startClientRecord);
-  document.getElementById('stopClientRecord').addEventListener('click', stopClientRecord);
+  display.innerHTML = `
+    <span class="status-text">Lat: ${lat}</span>
+    <span class="status-text">Lng: ${lng}</span>
+    <span class="status-text">Head: ${heading}</span>
+    <span class="status-text">Bat: ${battery}</span>
+    <span class="status-text">Speed: ${speed}</span>
+    <span class="status-text">US: ${ultrasonic}</span>
+    <span class="status-text">Updated: ${ts}</span>
+  `;
+}
 
-  function startClientRecord(){
-    if (!videoImg.src) return alert('No video frame available.');
-    // create canvas sized to displayed image natural dimensions if available else bounding box
-    const w = videoImg.naturalWidth || videoImg.width || 640;
-    const h = videoImg.naturalHeight || videoImg.height || 360;
-    clientCanvas = document.createElement('canvas');
-    clientCanvas.width = w;
-    clientCanvas.height = h;
-    const ctx = clientCanvas.getContext('2d');
+/* ---------------- HANDLE ROBOT MOVEMENT ---------------- */
+function handleRobotMovement(status) {
+  const lat = status.lat, lng = status.lng;
+  const heading = status.heading;
+  const speed = typeof status.speed === 'number' ? status.speed : null;
 
-    clientRecorder = new MediaRecorder(clientCanvas.captureStream(10), { mimeType: 'video/webm;codecs=vp9' });
-    recordChunks = [];
-    clientRecorder.ondataavailable = (e) => { if (e.data.size) recordChunks.push(e.data); };
-    clientRecorder.onstop = () => {
-      const blob = new Blob(recordChunks, { type: 'video/webm' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = 'recording_'+Date.now()+'.webm'; document.body.appendChild(a); a.click(); a.remove();
-      URL.revokeObjectURL(url); addLogToUI('info','Client recording downloaded.');
-    };
-    clientRecorder.start();
-    addLogToUI('info','Client recording started.');
-
-    clientStreamInterval = setInterval(() => {
-      try {
-        ctx.drawImage(videoImg, 0, 0, clientCanvas.width, clientCanvas.height);
-      } catch(e){}
-    }, 100); // ~10fps
+  const dest = L.latLng(lat, lng);
+  // place or move robot marker, rotate by heading
+  if (!robotMarker) {
+    robotMarker = L.marker(dest, {
+      icon: L.divIcon({ html:`<div style="font-size:26px; transform: rotate(${heading||0}deg)">🤖</div>`, className:'robotIcon' }),
+      interactive:false
+    }).addTo(map);
+    if (followRobot) map.panTo(dest);
+  } else {
+    animateRobotTo(dest, heading);
   }
 
-  function stopClientRecord(){
-    if (clientRecorder && clientRecorder.state !== 'inactive') clientRecorder.stop();
-    if (clientStreamInterval) { clearInterval(clientStreamInterval); clientStreamInterval = null; }
+  // add breadcrumb
+  if (showBreadcrumb) breadcrumbLine.addLatLng(dest);
+
+  // update progress if mission exists
+  if (currentMission && Array.isArray(currentMission.waypoints) && currentMission.waypoints.length >= 2) {
+    const percent = computeProgressPercent({ lat, lng }, currentMission.waypoints);
+    setProgress(percent);
+
+    // compute ETA
+    const remainingMeters = computeRemainingDistanceMeters({ lat, lng }, currentMission.waypoints);
+    if (speed && speed > 0) {
+      const seconds = remainingMeters / speed;
+      const eta = new Date(Date.now() + seconds*1000);
+      document.getElementById('etaText').innerText = `${formatMeters(remainingMeters)} — ETA ${eta.toLocaleTimeString()}`;
+    } else {
+      document.getElementById('etaText').innerText = `${formatMeters(remainingMeters)} — ETA N/A (speed unknown)`;
+    }
   }
+}
 
-  /* ========== Chat (push request) ========== */
-  document.getElementById('sendChatBtn').addEventListener('click', async () => {
-    const text = document.getElementById('chatInput').value.trim();
-    if (!text) return;
-    const idRef = db.ref('chat_requests').push();
-    await idRef.set({ text, from: auth.currentUser ? auth.currentUser.uid : 'web', ts: Date.now() });
-    addLogToUI('chat_request', 'Chat request queued.');
-    document.getElementById('chatInput').value = '';
-  });
-  document.getElementById('clearChatBtn').addEventListener('click', () => { chatBox.innerHTML = ''; });
+/* Smooth animation to new position and rotate to heading */
+function animateRobotTo(destLatLng, heading) {
+  const dest = L.latLng(destLatLng.lat, destLatLng.lng);
+  if (!robotMarker) { robotMarker = L.marker(dest).addTo(map); return; }
+  const start = robotMarker.getLatLng();
+  const frames = 18;
+  const duration = Math.max(300, Math.min(1200, 800 / playbackSpeed)); // ms, adjusted by playbackSpeed
+  const stepMs = duration / frames;
+  let i = 0;
+  const latStep = (dest.lat - start.lat) / frames;
+  const lngStep = (dest.lng - start.lng) / frames;
 
-  /* ========== GPS mini map rendering ========== */
-  function renderGpsMini(routeArr){
-    if (!routeArr || !routeArr.length) return;
-    // accept either array of points or object keyed by id
-    const ptsRaw = Array.isArray(routeArr) ? routeArr : Object.values(routeArr);
-    const pts = ptsRaw.map(p => [parseFloat(p.latitude), parseFloat(p.longitude)]);
-    if (!pts.length) return;
-    gpsPolyline.setLatLngs(pts);
-    const last = pts[pts.length-1];
-    gpsMarker.setLatLng(last);
-    try { miniMap.setView(last, Math.max(10, miniMap.getZoom())); } catch(e){}
-    gpsLatEl.textContent = last[0].toFixed(6);
-    gpsLonEl.textContent = last[1].toFixed(6);
-    safeInvalidateMap();
+  const anim = setInterval(() => {
+    i++;
+    const next = L.latLng(start.lat + latStep*i, start.lng + lngStep*i);
+    robotMarker.setLatLng(next);
+    // rotate icon by replacing inner HTML transform
+    const el = robotMarker.getElement();
+    if (el) {
+      const div = el.querySelector('div');
+      if (div && typeof heading === 'number') div.style.transform = `rotate(${heading}deg)`;
+    }
+    if (showBreadcrumb) breadcrumbLine.addLatLng(next);
+    if (followRobot) map.panTo(next, { animate:false });
+    if (i >= frames) clearInterval(anim);
+  }, stepMs);
+}
+
+/* ---------------- PROGRESS / DISTANCE (Turf.js geodesic) ---------------- */
+function computeProgressPercent(robotLatLng, waypoints) {
+  if (!robotLatLng || !waypoints || waypoints.length < 2) return 0;
+  try {
+    // turf expects [lon,lat]
+    const line = turf.lineString(waypoints.map(w => [w.lon, w.lat]));
+    const pt = turf.point([robotLatLng.lng, robotLatLng.lat]);
+    const snapped = turf.nearestPointOnLine(line, pt, {units:'kilometers'});
+    // distance from start to snapped point
+    const startPoint = turf.point(line.geometry.coordinates[0]);
+    const sliceToSnapped = turf.lineSlice(startPoint, snapped, line);
+    const distToSnappedKm = turf.length(sliceToSnapped, {units:'kilometers'}) || 0;
+    const totalKm = turf.length(line, {units:'kilometers'}) || 0;
+    if (totalKm === 0) return 0;
+    return (distToSnappedKm / totalKm) * 100;
+  } catch(e) { console.error('computeProgressPercent error', e); return 0; }
+}
+
+/* Compute remaining distance in meters: distance from snapped point to end of route */
+function computeRemainingDistanceMeters(robotLatLng, waypoints) {
+  if (!robotLatLng || !waypoints || waypoints.length < 2) return 0;
+  try {
+    const line = turf.lineString(waypoints.map(w => [w.lon, w.lat]));
+    const pt = turf.point([robotLatLng.lng, robotLatLng.lat]);
+    const snapped = turf.nearestPointOnLine(line, pt, {units:'kilometers'});
+    const endPt = turf.point(line.geometry.coordinates[line.geometry.coordinates.length-1]);
+    const slice = turf.lineSlice(snapped, endPt, line);
+    const km = turf.length(slice, {units:'kilometers'});
+    return Math.round(km * 1000);
+  } catch(e) { console.error('computeRemainingDistanceMeters error', e); return 0; }
+}
+
+/* ---------------- ETA + formatting ---------------- */
+function formatMeters(m) {
+  if (m >= 1000) return (m/1000).toFixed(2)+' km';
+  return Math.round(m) + ' m';
+}
+
+function setProgress(percent){
+  const p = Math.max(0, Math.min(100, percent));
+  document.getElementById('progressBar').style.width = p + '%';
+  document.getElementById('progressText').innerText = p.toFixed(1) + '%';
+}
+
+/* ---------------- PLAYBACK (simulate moving along mission route) ---------------- */
+function startPlayback(){
+  if (!currentMission || !Array.isArray(currentMission.waypoints) || currentMission.waypoints.length < 2) {
+    return alert('Load a mission first to use playback.');
   }
+  stopPlayback();
+  const coords = currentMission.waypoints.map(w => [w.lat, w.lon]);
+  // flatten points into array of points to step through
+  const route = [];
+  for (let i=0;i<coords.length-1;i++){
+    const a = coords[i], b = coords[i+1];
+    const seg = turf.lineString([[a[1],a[0]],[b[1],b[0]]]);
+    const segKm = turf.length(seg, {units:'kilometers'});
+    const points = Math.max(6, Math.round(segKm * 100)); // ~100 pts per km
+    for (let t=0;t<=points;t++){
+      const frac = t / points;
+      const interp = turf.along(seg, segKm * frac, {units:'kilometers'});
+      route.push([interp.geometry.coordinates[1], interp.geometry.coordinates[0]]);
+    }
+  }
+  // playback at interval; speed multiplier affects delay
+  let idx = playbackIndex || 0;
+  const baseDelay = 400; // ms between steps at speed=1
+  playbackInterval = setInterval(() => {
+    if (idx >= route.length) { stopPlayback(); return; }
+    const p = route[idx];
+    // simulate robot marker movement and status updates
+    animateRobotTo({lat:p[0], lng:p[1]}, lastStatus && lastStatus.heading ? lastStatus.heading : null);
+    setProgress(computeProgressPercent({lat:p[0], lng:p[1]}, currentMission.waypoints));
+    idx++;
+    playbackIndex = idx;
+  }, Math.max(50, baseDelay / playbackSpeed));
+}
 
-  document.getElementById('openGpsBtn').addEventListener('click', () => window.open('/gps', '_blank'));
-  document.getElementById('resetRouteBtn').addEventListener('click', async () => {
-    if (!confirm('Reset stored GPS route?')) return;
-    await db.ref('gps_route').set([]);
-    addLogToUI('info','GPS route reset requested.');
-  });
+function stopPlayback(){
+  if (playbackInterval) { clearInterval(playbackInterval); playbackInterval = null; }
+}
 
-  /* ========== Vehicle control (with confirmation for dangerous actions) ========== */
-  document.getElementById('shutdownBtn').addEventListener('click', async () => {
-    if (!confirm('SHUTDOWN engine? This is dangerous.')) return;
-    await db.ref('vehicle_commands').push({ command: 'shutdown_car', by: auth.currentUser ? auth.currentUser.uid : 'web', ts: Date.now() });
-    addLogToUI('command', 'Vehicle shutdown queued.');
-  });
-  document.getElementById('enableBtn').addEventListener('click', async () => {
-    await db.ref('vehicle_commands').push({ command: 'enable_car', by: auth.currentUser ? auth.currentUser.uid : 'web', ts: Date.now() });
-    addLogToUI('command', 'Vehicle enable queued.');
-  });
+function stepPlayback(step){
+  if (!currentMission || !Array.isArray(currentMission.waypoints) || currentMission.waypoints.length < 2) return;
+  // create route snapshot as in startPlayback but without interval
+  const coords = currentMission.waypoints.map(w => [w.lat, w.lon]);
+  const route = [];
+  for (let i=0;i<coords.length-1;i++){
+    const a = coords[i], b = coords[i+1];
+    const seg = turf.lineString([[a[1],a[0]],[b[1],b[0]]]);
+    const segKm = turf.length(seg, {units:'kilometers'});
+    const points = Math.max(6, Math.round(segKm * 100));
+    for (let t=0;t<=points;t++){
+      const frac = t / points;
+      const interp = turf.along(seg, segKm * frac, {units:'kilometers'});
+      route.push([interp.geometry.coordinates[1], interp.geometry.coordinates[0]]);
+    }
+  }
+  if (route.length === 0) return;
+  playbackIndex = (playbackIndex || 0) + step;
+  if (playbackIndex < 0) playbackIndex = 0;
+  if (playbackIndex >= route.length) playbackIndex = route.length - 1;
+  const p = route[playbackIndex];
+  animateRobotTo({lat:p[0], lng:p[1]}, lastStatus && lastStatus.heading ? lastStatus.heading : null);
+  setProgress(computeProgressPercent({lat:p[0], lng:p[1]}, currentMission.waypoints));
+}
 
-  /* ========== Utility: detach on page hide to reduce DB read ========== */
-  window.addEventListener('beforeunload', () => detachDatabaseListeners());
+/* ---------------- INITIAL UI state ---------------- */
+document.getElementById('etaText').innerText = 'N/A';
+document.getElementById('turnsContainer').innerText = 'No mission';
 
-  /* ========== OPTIONAL: small improvement - heartbeat to show connection health ========== */
-  // You can have the backend toggle /camera_heartbeat to show the camera is alive.
-  attachListener('camera_heartbeat', 'value', (snap) => {
-    const v = snap.val();
-    // if backend writes timestamp, display recency
-    if (!v) return;
-    const ts = Number(v) || Date.now();
-    const ageSec = Math.round((Date.now() - ts)/1000);
-    cameraStatusEl.textContent = ageSec < 10 ? 'online' : `online (last ${ageSec}s)`;
-  });
+/* ---------------- Notes for production ---------------- */
+/*
+ - Use Firebase Auth and Realtime Database rules to restrict access.
+ - Replace robotRef path if needed (e.g., use per-user robot nodes).
+ - For very large missions consider server-side pre-processing or vector tiles.
+*/
 
-  /* ========== End of script ========== */
-  </script>
+</script>
 </body>
 </html>
